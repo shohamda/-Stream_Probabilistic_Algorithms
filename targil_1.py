@@ -13,22 +13,22 @@ def Morris_Alpha(stream):
         r = random.uniform(0, 1)
         if r < d:
             x += 1
-    return 2 ** x - 1
+    return (math.pow(2,x) -1)
 
 #morris beta version
 def Morris_Beta(stream, counters):
   s = [0] * counters
   for i in range(len(s)):
     s[i]=Morris_Alpha(stream)
-  return(sum(s) / len(s))
+  return np.mean(s)
 
 #flajolet_martin_f0
 def fm_f0(stream):
     x = 1
-    seed = random.randint(0,10000) # Gili -
+    seed = random.randint(0,10000)
     for element in stream:
         h = mmh3.hash(element,seed=seed, signed=False) / (2**32 -1)
-        if  h < x:
+        if h < x:
             x = h
     return x
 
@@ -37,7 +37,7 @@ def fm_beta(stream, counters):
     s = [0] * counters
     for i in range(len(s)):
         s[i] = fm_f0(stream)
-    return (1 / (np.average(s)) - 1)
+    return ((1 / (np.mean(s))) - 1)
 
 #flajolet_martin_final
 def fm_final(stream, beta_counters):
@@ -48,73 +48,74 @@ def fm_final(stream, beta_counters):
 
 if __name__ == "__main__":
     random.seed(1000)  # set a random seed to be able reproduse results
-    stream = np.random.randint(1000, size=10000)  # A-2: synthetic dataset, 10,000 unique and 1,000,000 elements
+    stream = np.random.randint(10000, size=10000)  # A-2: synthetic dataset, 10,000 unique and 1,000,000 elements
 
     # answer 3
-    COPIES = 100
-    morris_estimator = [0] * COPIES
-    FM_estimator = [0] * COPIES
-    var_morris = [0] * COPIES
-    var_FM = [0] * COPIES
-
-    for i in range(COPIES):
-        random.seed(i)  # change the seed for 100 iterations
-        morris_estimator[i] = Morris_Alpha(stream)
-        FM_estimator[i] = (1 / fm_f0(stream))
-    morris_est = np.average(morris_estimator)  # normalized estimator
-    FM_est = np.average(FM_estimator)  # normalized estimator
-    print('morris_estimator 100 copies', morris_est)
-    print('FM_estimator 100 copies', FM_est)
-
-    for i in range(COPIES):
-        random.seed(i)  # change the seed for 100 iterations
-        var_morris[i] = 0.5 * pow(morris_est,2) - 0.5 * morris_est  # !!!im not sure how to calculate var!!!!
-        var_FM[i] = FM_est # var(x) = \frac{1}{n+1})^2
-    s = np.average(var_morris)  # normalized var
-    z = np.average(var_FM)  # normalized var
-    print('var_morris 100 copies', s)
-    print('var_FM 100 copies', z)
+    COPIES = [10, 25, 50, 100] # number of copies for statistical significance
+    for a in COPIES:
+        morris_estimator = [0] * a
+        FM0_estimator = [0] * a
+        for i in range(a):
+            random.seed(i)  # change the seed for 100 iterations
+            morris_estimator[i] = Morris_Alpha(stream)
+            FM0_estimator[i] = (1 / fm_f0(stream))
+        morris_est = np.mean(morris_estimator)  # normalized estimator
+        FM0_est = np.mean(FM0_estimator)  # normalized estimator
+        print('morris_estimator for', a, 'copies', morris_est)
+        print('FM_estimator for',a ,'copies', FM0_est)
+        morris_normal_var = np.var(morris_estimator / len(stream))  # normalized var
+        FM0_normal_var = np.var(FM0_estimator / len(stream))  # normalized var
+        print('var_morris for',a ,'copies', morris_normal_var)
+        print('var_FM for',a ,'copies', FM0_normal_var)
 
     #answer 4.i
     beta_counters = np.array([4, 5, 6])
     final_counters = np.array([2, 4])
 
     morris_estimator = [0] * len(beta_counters)
-    FM_estimator = [0] * len(beta_counters)
+    FM_beta_estimator = [0] * len(beta_counters)
     mem_size_morris = [0] * len(beta_counters)
     mem_size_fm_beta = [0] * len(beta_counters)
-
     final_res = []
 
     # answer 4.i.a+b
+    fm_beta_res = []
+    fm_beta_var = []
+    fm_beta_error = []
+    morris_beta_res = []
+    morris_beta_var = []
+    morris_beta_error =[]
+
+
     for k in range(len(beta_counters)): # k = 0,1,2
         # calculate morris beta and fm beta
         for i in beta_counters: # i = 10,50,100
             morris_estimator[k] = Morris_Beta(stream, i)
-            FM_estimator[k] = fm_beta(stream, i)
+            FM_beta_estimator[k] = fm_beta(stream, i)
+
+        fm_beta_res.append(np.mean(FM_beta_estimator))
+        fm_beta_var.append(np.var(FM_beta_estimator) / len(stream))
+        fm_beta_error.append((np.sqrt(1 / (DELTA * i))))
+
+        morris_beta_res.append(np.mean(morris_estimator))
+        morris_beta_var.append(np.var(morris_estimator) / len(stream))
+        morris_beta_error.append(np.sqrt(1 / (DELTA * i)))
 
     # answer 4.i.c
+    fm_final_res = []
+    fm_final_var = []
+    fm_final_error = []
+
     for i in final_counters:
         z = [0] * i
         for t in beta_counters:
             for k in range(i):
                 z[k] = fm_final(stream, t)
             final_res.append(np.average(z))
-    # var
-    # morris beta: var(n) = n ** 2 / s
-    var_morris_beta = [0] * len(beta_counters)
-    for i in range(len(var_morris_beta)):
-        var_morris_beta[i] = pow(morris_estimator[i],2) / beta_counters[i] #
-    # fm beta : var(n) = 1 / (s * n ** 2)
-    var_fm_beta = [0] * len(beta_counters)
-    for i in range(len(var_fm_beta)):
-        var_fm_beta[i] = 1 / (beta_counters[i] * pow(FM_estimator[i], 2) )
-    # fm final : var(n) = 1 / (s * n ** 2)
-    var_fm_final = [0] * len(final_counters)
-    for i in range(len(var_fm_final)):
-        var_fm_final[i] = 1 / (final_counters[i] * pow(final_res[i], 2))
 
-    #normalized var
+    fm_final_res.append(np.mean(final_res))
+    fm_final_var.append(np.var(final_res) / len(stream))
+    fm_final_error.append(math.log(1 / DELTA) / (i * t))
 
     #relative error (4.ii)
     delta = 0.01
@@ -122,7 +123,7 @@ if __name__ == "__main__":
     morris_epsilon = [0] * len(beta_counters)
     morris_epsilon = pow(1/(beta_counters * delta),-2)
 
-    # fm beta beta s = 1 / (delta * epsilon ** 2)
+    # fm beta s = 1 / (delta * epsilon ** 2)
     fm_beta_epsilon = [0] * len(beta_counters)
     fm_beta_epsilon = pow(1/(beta_counters * delta),-2)
 
@@ -146,7 +147,7 @@ if __name__ == "__main__":
     color = 'tab:red'
     ax1.set_xlabel('COPIES')
     ax1.set_ylabel('morris', color=color)
-    ax1.plot(list(beta_counters), morris_estimator, color=color)
+    ax1.plot(list(beta_counters), morris_beta_res, color=color)
     plt.axhline(y=len(stream), color=color, linestyle='--') #accuracy
     ax1.tick_params(axis='y', labelcolor=color)
 
@@ -154,7 +155,7 @@ if __name__ == "__main__":
 
     color = 'tab:blue'
     ax2.set_ylabel('FM', color=color)  # we already handled the x-label with ax1
-    ax2.plot(list(beta_counters), FM_estimator, color=color)
+    ax2.plot(list(beta_counters), fm_beta_res, color=color)
     plt.axhline(y=1000, color='blue', linestyle='--') #accuracy
     ax2.tick_params(axis='y', labelcolor=color)
 
@@ -162,7 +163,7 @@ if __name__ == "__main__":
 
     color = 'tab:green'
     ax3.set_ylabel('FM_final', color=color)  # we already handled the x-label with ax1
-    ax3.plot(list(range(0, len(final_res))), final_res, color=color)
+    ax3.plot(list(range(0, len(final_counters))), fm_final_res, color=color)
     plt.axhline(y=1000, color='green', linestyle='--') #accuracy
     ax3.tick_params(axis='y', labelcolor=color)
 
